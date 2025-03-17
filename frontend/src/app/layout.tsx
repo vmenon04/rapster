@@ -12,26 +12,33 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <html lang="en">
-      <body className="relative h-screen w-screen bg-white">
+    return (
+      <html lang="en">
+        <body className="bg-white overflow-x-hidden">
           <ToastProvider>
-            {/* ✅ Navbar Fixed at Top */}
+            {/* Fixed Navbar */}
             <Navbar />
-
-            {/* ✅ Particle Background */}
-            <Particles className="absolute inset-0 -z-10 opacity-40" quantity={1000} ease={50} color="#222222" refresh />
-
-            {/* ✅ Main Content with Padding for Navbar & Scrolling Support */}
-            <div className="relative flex flex-col h-screen w-full pt-[72px] overflow-hidden">
-              <main className="flex-1 w-full h-full p-6">
-                {children}
-              </main>
-            </div>
-
+  
+            {/* Particles Behind Everything */}
+            <Particles
+              className="fixed inset-0 -z-10"
+              quantity={300}
+              ease={50}
+              staticity={50}
+              size={0.75}
+              color="#222222"
+              refresh
+            />
+  
+            {/* Main content offset for the navbar */}
+            <main className="pt-[72px] px-6">
+              {children}
+            </main>
+  
             <Toaster />
           </ToastProvider>
-      </body>
-    </html>
-  );
-}
+        </body>
+      </html>
+    );
+  }
+  
