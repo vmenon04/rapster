@@ -70,3 +70,51 @@ body {
     @apply bg-background text-foreground;
   }
 }
+
+@keyframes fade-in-up {
+    0% {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  
+  .fade-in-up {
+    opacity: 0; /* ensures we start hidden */
+    animation: fade-in-up 0.4s ease forwards; /* 0.4s animation */
+  }
+
+/* Hide the default track */
+.range-gray::-webkit-slider-runnable-track {
+    background-color: #e2e8f0; /* gray-200 or your choice */
+    height: 4px;
+    border-radius: 9999px;
+  }
+  .range-gray::-moz-range-track {
+    background-color: #e2e8f0;
+    height: 4px;
+    border-radius: 9999px;
+  }
+  
+  /* Style the thumb */
+  .range-gray::-webkit-slider-thumb {
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    background-color: #4a5568; /* gray-700 or your choice */
+    border-radius: 9999px;
+    cursor: pointer;
+    margin-top: -5px; /* to center the thumb vertically */
+  }
+  .range-gray::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    background-color: #4a5568;
+    border-radius: 9999px;
+    cursor: pointer;
+    border: none;
+  }
+  

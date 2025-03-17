@@ -5,7 +5,6 @@ import { fetchAudioFiles } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Play, Pause, Music } from "lucide-react";
 
-// Audio file structure
 interface AudioFile {
   id: number;
   title: string;
@@ -43,13 +42,13 @@ function AnalyticsModal({
   const animationFrameRef = useRef<number | null>(null);
 
   useEffect(() => {
-    // Start the entrance animation.
+    // Animate the modal in
     setAnimate(true);
   }, []);
 
   useEffect(() => {
     const drawVisualizations = () => {
-      // Draw waveform visualization (time-domain)
+      // Waveform visualization
       if (analyser && waveformCanvasRef.current) {
         const canvas = waveformCanvasRef.current;
         const ctx = canvas.getContext("2d");
@@ -57,8 +56,7 @@ function AnalyticsModal({
           const bufferLength = analyser.frequencyBinCount;
           const dataArray = new Uint8Array(bufferLength);
           analyser.getByteTimeDomainData(dataArray);
-          const width = canvas.width;
-          const height = canvas.height;
+          const { width, height } = canvas;
           ctx.clearRect(0, 0, width, height);
           ctx.lineWidth = 2;
           ctx.strokeStyle = "#4A5568"; // gray-700
@@ -80,7 +78,7 @@ function AnalyticsModal({
         }
       }
 
-      // Draw frequency distribution visualization (frequency-domain)
+      // Frequency distribution visualization
       if (analyser && freqCanvasRef.current) {
         const canvas = freqCanvasRef.current;
         const ctx = canvas.getContext("2d");
@@ -88,15 +86,13 @@ function AnalyticsModal({
           const bufferLength = analyser.frequencyBinCount;
           const dataArray = new Uint8Array(bufferLength);
           analyser.getByteFrequencyData(dataArray);
-          const width = canvas.width;
-          const height = canvas.height;
+          const { width, height } = canvas;
           ctx.clearRect(0, 0, width, height);
 
           const barWidth = (width / bufferLength) * 2.5;
           let x = 0;
           for (let i = 0; i < bufferLength; i++) {
             const barHeight = (dataArray[i] / 255) * height;
-            // You can add a gradient or a color mapping here.
             ctx.fillStyle = "#4A5568"; // gray-700
             ctx.fillRect(x, height - barHeight, barWidth, barHeight);
             x += barWidth + 1;
@@ -109,17 +105,13 @@ function AnalyticsModal({
 
     drawVisualizations();
     return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
     };
   }, [analyser]);
 
   const formatTime = (time: number) => {
     const minutes = Math.floor(time / 60);
-    const seconds = Math.floor(time % 60)
-      .toString()
-      .padStart(2, "0");
+    const seconds = Math.floor(time % 60).toString().padStart(2, "0");
     return `${minutes}:${seconds}`;
   };
 
@@ -129,7 +121,7 @@ function AnalyticsModal({
       <div
         className="absolute inset-0 bg-black opacity-50 transition-opacity"
         onClick={onClose}
-      ></div>
+      />
       {/* Modal content */}
       <div
         className={`relative bg-white p-8 rounded-md shadow-lg max-w-4xl w-full transform transition-all duration-300 ${
@@ -172,7 +164,7 @@ function AnalyticsModal({
                     audioRef.current.currentTime = newTime;
                   }
                 }}
-                className="w-full"
+                className="range-gray w-full" // <-- apply our custom gray styling
               />
             </div>
             <div className="flex justify-between text-sm text-gray-600 mb-4">
@@ -181,11 +173,21 @@ function AnalyticsModal({
             </div>
             {/* Waveform Visualizer */}
             <div className="w-full h-24 bg-gray-100 rounded-md overflow-hidden mb-4">
-              <canvas ref={waveformCanvasRef} width={600} height={100} className="w-full h-full" />
+              <canvas
+                ref={waveformCanvasRef}
+                width={600}
+                height={100}
+                className="w-full h-full"
+              />
             </div>
             {/* Frequency Distribution Visualizer */}
             <div className="w-full h-24 bg-gray-100 rounded-md overflow-hidden">
-              <canvas ref={freqCanvasRef} width={600} height={100} className="w-full h-full" />
+              <canvas
+                ref={freqCanvasRef}
+                width={600}
+                height={100}
+                className="w-full h-full"
+              />
             </div>
           </div>
         </div>
@@ -202,7 +204,7 @@ export default function AudioLibrary() {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
 
-  // Shared audio element and context refs.
+  // Shared audio element and context refs
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -219,7 +221,7 @@ export default function AudioLibrary() {
     getAudioFiles();
   }, []);
 
-  // Setup the audio element with event listeners and connect it to the analyser.
+  // Setup the audio element with event listeners and connect it to the analyser
   const setupAudio = (audio: HTMLAudioElement) => {
     audio.addEventListener("loadedmetadata", () => {
       setDuration(audio.duration);
@@ -227,14 +229,12 @@ export default function AudioLibrary() {
     audio.addEventListener("timeupdate", () => {
       setCurrentTime(audio.currentTime);
     });
-    // Create or reuse AudioContext.
     if (!audioContextRef.current) {
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       audioContextRef.current = new AudioContextClass();
     }
     if (audioContextRef.current) {
       try {
-        // Create a MediaElementSource and an analyser.
         const source = audioContextRef.current.createMediaElementSource(audio);
         const analyser = audioContextRef.current.createAnalyser();
         analyser.fftSize = 2048;
@@ -247,7 +247,7 @@ export default function AudioLibrary() {
     }
   };
 
-  // Handle play/pause from the table.
+  // Handle play/pause from the list
   const handlePlayPause = (file: AudioFile, index: number) => {
     if (currentAudioIndex === index) {
       if (audioRef.current) {
@@ -269,7 +269,6 @@ export default function AudioLibrary() {
         audioRef.current.pause();
       }
       const newAudio = new Audio(file.file_url);
-      // IMPORTANT: Set crossOrigin to "anonymous" so the AudioContext can access the data.
       newAudio.crossOrigin = "anonymous";
       audioRef.current = newAudio;
       setupAudio(newAudio);
@@ -284,7 +283,7 @@ export default function AudioLibrary() {
     }
   };
 
-  // Toggle playback (used in both table and modal).
+  // Toggle playback (used in both list and modal)
   const togglePlayPause = () => {
     if (audioRef.current) {
       if (audioRef.current.paused) {
@@ -305,15 +304,16 @@ export default function AudioLibrary() {
   return (
     <div className="w-full max-w-4xl mx-auto p-4">
       <div className="bg-white rounded-md shadow overflow-hidden">
-        <div className="grid grid-cols-4 items-center px-4 py-2 bg-gray-100 font-semibold border-b">
-          <div className="col-span-2">Title</div>
-          <div>Artist</div>
-          <div className="text-right">Actions</div>
+        {/* Optional heading */}
+        <div className="px-4 py-4 border-b flex items-center justify-between">
+          <h1 className="text-lg font-semibold">Your Library</h1>
         </div>
+
         {audioFiles.map((file, index) => (
           <div
             key={file.id}
-            className="grid grid-cols-4 items-center px-4 py-3 border-b cursor-pointer hover:bg-gray-50"
+            className={`flex items-center p-4 border-b last:border-b-0 hover:bg-gray-50 transition cursor-pointer fade-in-up`}
+            style={{ animationDelay: `${index * 0.1}s` }}
             onClick={() => {
               setSelectedFile(file);
               if (currentAudioIndex !== index) {
@@ -321,38 +321,41 @@ export default function AudioLibrary() {
               }
             }}
           >
-            <div className="col-span-2 flex items-center space-x-3">
+            {/* Cover Art / Icon */}
+            <div className="w-10 h-10 flex-shrink-0 rounded-md overflow-hidden bg-gray-200 flex items-center justify-center mr-3">
               {file.image_url ? (
-                <img
-                  src={file.image_url}
-                  alt={file.title}
-                  className="w-10 h-10 rounded-md object-cover"
-                />
+                <img src={file.image_url} alt={file.title} className="w-full h-full object-cover" />
               ) : (
-                <Music className="w-6 h-6 text-gray-500" />
+                <Music className="w-5 h-5 text-gray-500" />
               )}
-              <span className="truncate">{file.title}</span>
             </div>
-            <div className="truncate">{file.artist || "Unknown Artist"}</div>
-            <div className="text-right">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handlePlayPause(file, index);
-                }}
-              >
-                {currentAudioIndex === index && isPlaying ? (
-                  <Pause className="w-4 h-4" />
-                ) : (
-                  <Play className="w-4 h-4" />
-                )}
-              </Button>
+
+            {/* Song Info */}
+            <div className="flex-1">
+              <div className="font-medium text-sm text-gray-900 truncate">{file.title}</div>
+              <div className="text-xs text-gray-500">{file.artist || "Unknown Artist"}</div>
             </div>
+
+            {/* Play/Pause Button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={(e) => {
+                e.stopPropagation();
+                handlePlayPause(file, index);
+              }}
+            >
+              {currentAudioIndex === index && isPlaying ? (
+                <Pause className="w-4 h-4" />
+              ) : (
+                <Play className="w-4 h-4" />
+              )}
+            </Button>
           </div>
         ))}
       </div>
+
+      {/* Analytics Modal */}
       {selectedFile && (
         <AnalyticsModal
           file={selectedFile}
