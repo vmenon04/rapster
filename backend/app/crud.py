@@ -65,7 +65,7 @@ def list_audio():
         if "file_url" in audio:
             file_key = audio["file_url"].split("/")[-1]  # Extract file key from URL
             audio["file_url"] = generate_signed_url(os.getenv("R2_AUDIO_BUCKET"), file_key)
-        if "image_url" in audio:
+        if "image_url" in audio and audio["image_url"]:
             image_key = audio["image_url"].split("/")[-1]  # Extract file key
             audio["image_url"] = generate_signed_url(os.getenv("R2_IMAGE_BUCKET"), image_key)
 
