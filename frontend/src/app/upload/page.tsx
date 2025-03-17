@@ -91,7 +91,8 @@ export default function UploadPage() {
         toast.success(`Uploaded ${fileObj.audio.name}!`);
       } catch (error) {
         console.error("❌ Upload Error:", error);
-        toast.error("Upload failed", { description: error.message });
+        const errorMessage = error instanceof Error ? error.message : "Unknown error";
+        toast.error("Upload failed", { description: errorMessage });
       }
     }
 
@@ -155,7 +156,9 @@ export default function UploadPage() {
                 <input
                   type="file"
                   id={`imageInput-${index}`}
-                  ref={(el) => (imageInputRefs.current[index] = el)}
+                  ref={(el) => {
+                    imageInputRefs.current[index] = el;
+                  }}
                   onChange={(e) => handleImageChange(e, index)}
                   className="hidden"
                   accept="image/*"
