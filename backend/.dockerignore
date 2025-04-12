@@ -1,0 +1,26 @@
+# Python junk
+__pycache__/
+*.pyc
+*.pyo
+
+# venv (don't copy your local Python env)
+.venv/
+env/
+venv/
+
+# Environment config
+.env
+
+# Audio files (skip test media)
+*.wav
+*.mp3
+*.ogg
+
+# IDE/editor junk
+*.log
+*.DS_Store
+.vscode/
+.idea/
+
+# Git
+.git

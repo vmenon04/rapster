@@ -45,7 +45,6 @@ StrEnum==0.4.15
 supabase==2.13.0
 supafunc==0.9.3
 typing_extensions==4.12.2
-urllib3==2.3.0
 uvicorn==0.34.0
 websockets==14.2
 yarl==1.18.3
