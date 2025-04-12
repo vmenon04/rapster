@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from typing import Optional
 
 class AudioFileBase(BaseModel):
     title: str
@@ -6,7 +7,11 @@ class AudioFileBase(BaseModel):
 
 class AudioFileCreate(AudioFileBase):
     file_url: str
-    image_url: str
+    image_url: Optional[str] = None
+    bpm: Optional[float] = None
+    key: Optional[str] = None
+    scale: Optional[str] = None
+
 
 class AudioFileResponse(AudioFileBase):
     id: int

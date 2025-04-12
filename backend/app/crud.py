@@ -20,8 +20,12 @@ def create_audio(audio):
         "title": audio.title,
         "artist": audio.artist,
         "file_url": audio.file_url,
-        "image_url": audio.image_url
+        "image_url": audio.image_url,
+        "bpm": audio.bpm,
+        "key": audio.key,
+        "scale": audio.scale,
     }).execute()
+
 
     print(f"Supabase Response: {data}, Error: {error}")  # Debugging output
 
