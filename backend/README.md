@@ -46,7 +46,7 @@ backend/
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/music_app.git
+git clone https://github.com/vmenon04/music_app.git
 cd music_app/backend
 ```
 
