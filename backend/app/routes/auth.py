@@ -7,7 +7,7 @@ from app.schemas import UserCreate, UserLogin, UserResponse, TokenResponse
 from app.models import User
 from app.crud import create_user, get_user_by_email
 from app.auth import verify_password, create_tokens_for_user, verify_token
-from app.dependencies import get_current_user, security
+from app.dependencies import get_current_user, security, rate_limit_strict
 from app.logger import get_logger
 from app.exceptions import ValidationError, DatabaseError
 
@@ -16,7 +16,7 @@ router = APIRouter(prefix="/auth", tags=["authentication"])
 
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-async def register(user_data: UserCreate):
+async def register(user_data: UserCreate, _: None = Depends(rate_limit_strict)):  # Rate limit: 50 requests per minute
     """Register a new user account."""
     try:
         logger.info(f"Registration attempt for email: {user_data.email}")
@@ -51,7 +51,7 @@ async def register(user_data: UserCreate):
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(user_credentials: UserLogin):
+async def login(user_credentials: UserLogin, _: None = Depends(rate_limit_strict)):  # Rate limit: 50 requests per minute
     """Authenticate user and return access tokens."""
     try:
         logger.info(f"Login attempt for email: {user_credentials.email}")

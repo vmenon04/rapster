@@ -8,14 +8,19 @@ from app.auth import get_password_hash
 from supabase import create_client
 from typing import List, Optional, Dict, Any
 import time
+import asyncio
 from functools import wraps
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 
 settings = get_settings()
 logger = get_logger("crud")
 
 # Initialize Supabase client
 supabase_client = create_client(settings.supabase_url, settings.supabase_key)
+
+# Thread pool for async execution of sync operations
+_thread_pool = ThreadPoolExecutor(max_workers=10)
 
 
 def retry_on_failure(max_retries: int = 3, delay: float = 1.0):
@@ -40,6 +45,38 @@ def retry_on_failure(max_retries: int = 3, delay: float = 1.0):
             raise DatabaseError(f"Operation failed after {max_retries} attempts", str(last_exception))
         return wrapper
     return decorator
+
+
+def async_retry_on_failure(max_retries: int = 3, delay: float = 1.0):
+    """Async decorator to retry database operations on failure."""
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            last_exception = None
+            for attempt in range(max_retries):
+                try:
+                    return await func(*args, **kwargs)
+                except Exception as e:
+                    last_exception = e
+                    if attempt < max_retries - 1:
+                        logger.warning(
+                            f"Attempt {attempt + 1} failed for {func.__name__}: {e}. "
+                            f"Retrying in {delay} seconds..."
+                        )
+                        await asyncio.sleep(delay)
+                    else:
+                        logger.error(f"All {max_retries} attempts failed for {func.__name__}")
+            raise DatabaseError(f"Operation failed after {max_retries} attempts", str(last_exception))
+        return wrapper
+    return decorator
+
+
+def run_in_thread(func):
+    """Run a sync function in a thread pool."""
+    async def wrapper(*args, **kwargs):
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(_thread_pool, func, *args, **kwargs)
+    return wrapper
 
 
 def validate_audio_data(audio: AudioFileCreate) -> None:
@@ -142,6 +179,31 @@ def get_user_by_id(user_id: str) -> Optional[User]:
     except Exception as e:
         logger.error(f"Error fetching user by ID: {e}")
         raise DatabaseError("Failed to fetch user", str(e))
+
+
+# Async versions of user CRUD operations
+@async_retry_on_failure()
+async def get_user_by_id_async(user_id: str) -> Optional[User]:
+    """Async version of get_user_by_id."""
+    return await run_in_thread(get_user_by_id)(user_id)
+
+
+@async_retry_on_failure()
+async def get_user_by_email_async(email: str) -> Optional[User]:
+    """Async version of get_user_by_email."""
+    return await run_in_thread(get_user_by_email)(email)
+
+
+@async_retry_on_failure()
+async def get_user_by_username_async(username: str) -> Optional[User]:
+    """Async version of get_user_by_username."""
+    return await run_in_thread(get_user_by_username)(username)
+
+
+@async_retry_on_failure()
+async def create_user_async(user_data: UserCreate) -> User:
+    """Async version of create_user."""
+    return await run_in_thread(create_user)(user_data)
 
 
 # Audio CRUD Operations (Updated for User Authentication)

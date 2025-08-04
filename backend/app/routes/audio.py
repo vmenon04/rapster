@@ -10,7 +10,7 @@ from app.schemas import AudioFileCreate, AudioFileResponse
 from app.models import User
 from app.services.r2_service import upload_to_r2, generate_signed_url
 from app.services.ml import analyze_audio, get_analysis_metadata
-from app.dependencies import get_current_user, get_current_user_optional
+from app.dependencies import get_current_user, get_current_user_optional, rate_limit_upload, rate_limit_normal
 from app.config import get_settings
 from app.logger import get_logger
 from app.exceptions import (
@@ -28,7 +28,7 @@ DEFAULT_IMAGE_URL = ""
 
 
 @router.get("/health")
-async def health_check():
+async def health_check(_: None = Depends(rate_limit_normal)):  # Rate limit for testing
     """Health check endpoint for the audio service."""
     try:
         # Test database connectivity
@@ -59,7 +59,8 @@ async def upload_audio(
     image: Optional[UploadFile] = File(None, description="Optional cover image"),
     title: Optional[str] = Form(None, description="Track title"),
     artist: Optional[str] = Form(None, description="Artist name"),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    _: None = Depends(rate_limit_upload)  # Rate limit: 10 uploads per 5 minutes
 ):
     """
     Upload an audio file with optional cover image to cloud storage and analyze it.
@@ -238,7 +239,7 @@ async def analyze_uploaded_audio(
 
 
 @router.get("/{audio_id}", response_model=dict)
-async def get_audio_metadata(audio_id: int):
+async def get_audio_metadata(audio_id: int, _: None = Depends(rate_limit_normal)):  # Rate limit: 100 requests per minute
     """Get metadata for a specific audio file by ID."""
     try:
         logger.info(f"Fetching metadata for audio ID: {audio_id}")
@@ -270,7 +271,7 @@ async def get_audio_metadata(audio_id: int):
 
 
 @router.get("/list-audio/", response_model=list)
-async def list_all_audio():
+async def list_all_audio(_: None = Depends(rate_limit_normal)):  # Rate limit: 100 requests per minute
     """Get metadata for all stored audio files."""
     try:
         logger.info("Fetching all audio files")

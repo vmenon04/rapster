@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     debug: bool = Field(False, env='DEBUG')
     cors_origins: list[str] = ["http://localhost:3000"]
     
+    # Redis (optional, for production performance)
+    redis_url: Optional[str] = Field(None, env='REDIS_URL')
+    
     # Authentication
     secret_key: str = Field(
         default="your-secret-key-here-change-in-production", 
