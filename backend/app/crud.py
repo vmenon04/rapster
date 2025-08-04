@@ -419,3 +419,56 @@ def list_audio() -> List[Dict[Any, Any]]:
     except Exception as e:
         logger.error(f"Failed to list audio files: {e}")
         raise Exception(f"Database Error: {e}")
+
+
+@retry_on_failure(max_retries=3)
+def update_audio_hls_info(
+    audio_id: int, 
+    file_urls: Optional[Dict[str, str]] = None,
+    hls_url: Optional[str] = None,
+    formats_available: Optional[List[str]] = None
+) -> bool:
+    """
+    Update audio file record with HLS and multi-format information.
+    
+    Args:
+        audio_id: ID of the audio file to update
+        file_urls: Dictionary mapping format names to URLs
+        hls_url: URL to HLS master playlist
+        formats_available: List of available format names
+    
+    Returns:
+        True if update was successful, False otherwise
+    """
+    try:
+        logger.info(f"Updating HLS info for audio ID: {audio_id}")
+        
+        # Prepare update data
+        update_data = {}
+        
+        if file_urls is not None:
+            update_data["file_urls"] = file_urls
+        
+        if hls_url is not None:
+            update_data["hls_url"] = hls_url
+        
+        if formats_available is not None:
+            update_data["formats_available"] = formats_available
+        
+        if not update_data:
+            logger.warning(f"No update data provided for audio ID: {audio_id}")
+            return False
+        
+        # Update database
+        response = supabase_client.table("audio_files").update(update_data).eq("id", audio_id).execute()
+        
+        if not response.data:
+            logger.error(f"No audio file found with ID: {audio_id}")
+            return False
+        
+        logger.info(f"✅ Successfully updated HLS info for audio ID: {audio_id}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to update HLS info for audio ID {audio_id}: {e}")
+        raise DatabaseError(f"Failed to update HLS info: {e}")

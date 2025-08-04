@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, validator, EmailStr
-from typing import Optional, List
+from typing import Optional, List, Dict
 from datetime import datetime
 
 
@@ -83,8 +83,13 @@ class AudioFileBase(BaseModel):
 
 class AudioFileCreate(AudioFileBase):
     """Schema for creating new audio file records."""
-    file_url: str = Field(..., description="URL to the audio file in storage")
+    file_url: str = Field(..., description="Primary audio file URL")
     image_url: Optional[str] = Field(None, description="URL to the cover image")
+    
+    # Multi-format support
+    file_urls: Optional[Dict[str, str]] = Field(None, description="URLs for different audio qualities/formats")
+    hls_url: Optional[str] = Field(None, description="URL to HLS master playlist")
+    formats_available: Optional[List[str]] = Field(None, description="Available audio formats")
     
     # Musical analysis features
     bpm: Optional[float] = Field(None, ge=0, le=300, description="Beats per minute")
@@ -104,7 +109,7 @@ class AudioFileCreate(AudioFileBase):
     zero_crossing_rate: Optional[float] = Field(None, ge=0, description="Zero crossing rate")
     silence_rate: Optional[float] = Field(None, ge=0, le=1, description="Silence rate")
     
-    @validator('file_url', 'image_url')
+    @validator('file_url', 'image_url', 'hls_url')
     def validate_urls(cls, v):
         if v and not v.startswith(('http://', 'https://')):
             raise ValueError('URLs must start with http:// or https://')
@@ -127,6 +132,12 @@ class AudioFileResponse(AudioFileBase):
     uploader_username: Optional[str] = Field(None, description="Username of the uploader")
     file_url: str = Field(..., description="Signed URL to the audio file")
     image_url: Optional[str] = Field(None, description="Signed URL to the cover image")
+    
+    # Multi-format support
+    file_urls: Optional[Dict[str, str]] = Field(None, description="Signed URLs for different qualities/formats")
+    hls_url: Optional[str] = Field(None, description="Signed URL to HLS master playlist")
+    formats_available: Optional[List[str]] = Field(None, description="Available audio formats")
+    
     created_at: Optional[datetime] = Field(None, description="Creation timestamp")
     updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
     

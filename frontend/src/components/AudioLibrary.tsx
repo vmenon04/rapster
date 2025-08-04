@@ -7,6 +7,7 @@ import { apiClient, AudioFile } from "@/lib/api";
 import { handleError, showErrorToast } from "@/lib/errors";
 import { useAsync } from "@/hooks/useAsync";
 import { config } from "@/lib/config";
+import Hls from "hls.js";
 
 export default function AudioLibrary() {
   const [audioFiles, setAudioFiles] = useState<AudioFile[]>([]);
@@ -15,11 +16,13 @@ export default function AudioLibrary() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [currentQuality, setCurrentQuality] = useState<string>('auto');
 
   // Shared audio element and context refs
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
+  const hlsRef = useRef<Hls | null>(null);
 
   // Use async hook for data fetching
   const { data: files, isLoading, error, execute: fetchFiles } = useAsync<AudioFile[]>();
@@ -42,6 +45,16 @@ export default function AudioLibrary() {
       setAudioFiles(files);
     }
   }, [files]);
+
+  // Cleanup HLS instance on component unmount
+  useEffect(() => {
+    return () => {
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+    };
+  }, []);
 
   const setupAudio = (audio: HTMLAudioElement) => {
     // Remove existing event listeners to prevent duplicates
@@ -74,6 +87,94 @@ export default function AudioLibrary() {
         console.error("Error setting up audio context:", e);
       }
     }
+  };
+
+  const setupHLSPlayer = useCallback((audioElement: HTMLAudioElement, hlsUrl: string) => {
+    // Clean up existing HLS instance
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
+    }
+
+    if (Hls.isSupported()) {
+      const hls = new Hls({
+        // Auto quality selection
+        startLevel: -1,
+        // Progressive enhancement
+        enableWorker: true,
+        lowLatencyMode: false,
+      });
+      
+      hls.loadSource(hlsUrl);
+      hls.attachMedia(audioElement);
+      
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        console.log('HLS manifest loaded, available qualities:', hls.levels);
+      });
+      
+      hls.on(Hls.Events.LEVEL_SWITCHED, (event, data) => {
+        const level = hls.levels[data.level];
+        console.log('Quality switched to:', level);
+        setCurrentQuality(level.name || `${Math.round(level.bitrate / 1000)}kbps`);
+      });
+
+      hls.on(Hls.Events.ERROR, (event, data) => {
+        console.error('HLS error:', data);
+        if (data.fatal) {
+          switch (data.type) {
+            case Hls.ErrorTypes.NETWORK_ERROR:
+              console.log('Fatal network error encountered, trying to recover');
+              hls.startLoad();
+              break;
+            case Hls.ErrorTypes.MEDIA_ERROR:
+              console.log('Fatal media error encountered, trying to recover');
+              hls.recoverMediaError();
+              break;
+            default:
+              console.log('Fatal error, cannot recover');
+              hls.destroy();
+              break;
+          }
+        }
+      });
+      
+      hlsRef.current = hls;
+      return hls;
+    } else if (audioElement.canPlayType('application/vnd.apple.mpegurl')) {
+      // Native HLS support (Safari)
+      audioElement.src = hlsUrl;
+      setCurrentQuality('auto (native)');
+      return null;
+    } else {
+      // Fallback to regular audio
+      console.warn('HLS not supported, falling back to standard audio');
+      return null;
+    }
+  }, []);
+
+  const getOptimalAudioUrl = (file: AudioFile): { url: string; isHLS: boolean; quality?: string } => {
+    // Prefer HLS for adaptive streaming
+    if (file.hls_url) {
+      return { url: file.hls_url, isHLS: true };
+    }
+    
+    // Check for multiple format support
+    if (file.file_urls && Object.keys(file.file_urls).length > 0) {
+      // Prefer medium quality, fallback to high, then low
+      const preferredOrder = ['medium', 'high', 'low'];
+      for (const quality of preferredOrder) {
+        if (file.file_urls[quality]) {
+          return { url: file.file_urls[quality], isHLS: false, quality };
+        }
+      }
+      
+      // If no preferred quality, take the first available
+      const firstQuality = Object.keys(file.file_urls)[0];
+      return { url: file.file_urls[firstQuality], isHLS: false, quality: firstQuality };
+    }
+    
+    // Fallback to original file URL
+    return { url: file.file_url, isHLS: false, quality: 'original' };
   };
 
   const handleLoadedMetadata = () => {
@@ -114,10 +215,29 @@ export default function AudioLibrary() {
           audioRef.current.currentTime = 0;
         }
 
+        // Clean up existing HLS instance
+        if (hlsRef.current) {
+          hlsRef.current.destroy();
+          hlsRef.current = null;
+        }
+
+        // Get optimal audio URL
+        const { url: audioUrl, isHLS, quality } = getOptimalAudioUrl(file);
+        console.log(`Playing ${file.title} - URL: ${audioUrl}, HLS: ${isHLS}, Quality: ${quality}`);
+
         // Create new audio element
-        const newAudio = new Audio(file.file_url);
+        const newAudio = new Audio();
         newAudio.crossOrigin = "anonymous";
         newAudio.volume = config.player.defaultVolume;
+        
+        if (isHLS) {
+          // Setup HLS streaming
+          setupHLSPlayer(newAudio, audioUrl);
+        } else {
+          // Regular audio file
+          newAudio.src = audioUrl;
+          setCurrentQuality(quality || 'original');
+        }
         
         audioRef.current = newAudio;
         setupAudio(newAudio);
@@ -183,7 +303,23 @@ export default function AudioLibrary() {
     if (file.key && file.scale) features.push(`${file.key} ${file.scale}`);
     if (file.duration_sec) features.push(formatDuration(file.duration_sec));
     
+    // Add streaming info
+    if (file.hls_url) {
+      features.push("HLS");
+    } else if (file.file_urls && Object.keys(file.file_urls).length > 0) {
+      features.push(`${Object.keys(file.file_urls).length} qualities`);
+    }
+    
     return features.join(" • ");
+  };
+
+  const getStreamingStatusIcon = (file: AudioFile) => {
+    if (file.hls_url) {
+      return <span className="text-green-600 text-xs" title="Adaptive streaming available">📡</span>;
+    } else if (file.file_urls && Object.keys(file.file_urls).length > 0) {
+      return <span className="text-blue-600 text-xs" title="Multiple qualities available">🎚️</span>;
+    }
+    return null;
   };
 
   // Loading state
@@ -285,7 +421,15 @@ export default function AudioLibrary() {
 
             {/* Track Info */}
             <div className="flex-1 min-w-0">
-              <div className="font-medium text-sm text-gray-900 truncate">{file.title}</div>
+              <div className="flex items-center gap-2">
+                <div className="font-medium text-sm text-gray-900 truncate">{file.title}</div>
+                {getStreamingStatusIcon(file)}
+                {currentAudioIndex === index && currentQuality !== 'auto' && (
+                  <span className="text-xs bg-blue-100 text-blue-700 px-1 rounded">
+                    {currentQuality}
+                  </span>
+                )}
+              </div>
               <div className="text-xs text-gray-500 truncate">{file.artist || "Unknown Artist"}</div>
               {file.uploader_username && (
                 <div className="text-xs text-blue-600 truncate">

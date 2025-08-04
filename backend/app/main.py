@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 import time
 
-from app.routes import audio, auth
+from app.routes import audio, auth, jobs
 from app.config import get_settings
 from app.logger import get_logger, setup_logging
 from app.exceptions import (
@@ -27,6 +27,7 @@ app = FastAPI(
 # Include API routes
 app.include_router(audio.router)
 app.include_router(auth.router)
+app.include_router(jobs.router)
 
 # Configure CORS
 app.add_middleware(

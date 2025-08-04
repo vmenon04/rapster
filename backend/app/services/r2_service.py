@@ -1,6 +1,7 @@
 import boto3
 import uuid
-from typing import Optional
+import os
+from typing import Optional, Dict, List
 from fastapi import UploadFile
 from app.config import get_settings
 from app.logger import get_logger
@@ -198,32 +199,199 @@ def delete_file_from_r2(bucket: str, file_key: str) -> bool:
 
 def list_bucket_contents(bucket: str, prefix: str = "") -> list:
     """
-    List contents of an R2 bucket.
+    List contents of a bucket with optional prefix filter.
     
     Args:
-        bucket: The bucket name
-        prefix: Optional prefix to filter objects
+        bucket: Name of the bucket to list
+        prefix: Optional prefix to filter results
     
     Returns:
-        List of object keys
+        List of object keys in the bucket
     """
     try:
-        logger.info(f"Listing contents of bucket: {bucket}")
+        response = s3_client.list_objects_v2(Bucket=bucket, Prefix=prefix)
+        if 'Contents' not in response:
+            return []
         
-        paginator = s3_client.get_paginator('list_objects_v2')
-        pages = paginator.paginate(Bucket=bucket, Prefix=prefix)
-        
-        objects = []
-        for page in pages:
-            if 'Contents' in page:
-                objects.extend([obj['Key'] for obj in page['Contents']])
-        
-        logger.info(f"Found {len(objects)} objects in bucket {bucket}")
+        objects = [obj['Key'] for obj in response['Contents']]
+        logger.info(f"Listed {len(objects)} objects from bucket: {bucket}")
         return objects
         
     except Exception as e:
         logger.error(f"Error listing bucket contents: {e}")
         return []
+
+
+def upload_hls_directory(local_dir: str, bucket_key_prefix: str, is_audio: bool = True) -> Optional[Dict[str, str]]:
+    """
+    Upload an entire HLS directory (master playlist, variant playlists, and segments) to R2.
+    
+    Args:
+        local_dir: Local directory containing HLS files
+        bucket_key_prefix: Prefix for R2 object keys (e.g., "audio/uuid/hls/")
+        is_audio: Whether this is for audio bucket (True) or other bucket (False)
+    
+    Returns:
+        Dictionary mapping local file paths to R2 URLs, or None if failed
+    """
+    if not os.path.exists(local_dir):
+        logger.error(f"Local HLS directory does not exist: {local_dir}")
+        return None
+    
+    bucket = settings.r2_audio_bucket if is_audio else settings.r2_image_bucket
+    uploaded_files = {}
+    
+    try:
+        # Walk through all files in the directory
+        for root, dirs, files in os.walk(local_dir):
+            for file in files:
+                local_file_path = os.path.join(root, file)
+                
+                # Calculate relative path from the base directory
+                rel_path = os.path.relpath(local_file_path, local_dir)
+                
+                # Construct R2 key
+                r2_key = f"{bucket_key_prefix.rstrip('/')}/{rel_path}"
+                
+                # Determine content type
+                content_type = get_content_type_for_hls_file(file)
+                
+                # Upload file
+                file_url = upload_file_to_r2(local_file_path, bucket, r2_key, content_type)
+                if file_url:
+                    uploaded_files[local_file_path] = file_url
+                    logger.debug(f"Uploaded HLS file: {rel_path} -> {file_url}")
+                else:
+                    logger.error(f"Failed to upload HLS file: {rel_path}")
+                    return None
+        
+        logger.info(f"Successfully uploaded {len(uploaded_files)} HLS files to R2")
+        return uploaded_files
+        
+    except Exception as e:
+        logger.error(f"Error uploading HLS directory: {e}")
+        return None
+
+
+def upload_file_to_r2(local_file_path: str, bucket: str, key: str, content_type: str = None) -> Optional[str]:
+    """
+    Upload a local file to R2 with specified key.
+    
+    Args:
+        local_file_path: Path to local file
+        bucket: R2 bucket name
+        key: Object key in R2
+        content_type: MIME type for the file
+    
+    Returns:
+        Public URL of uploaded file, or None if failed
+    """
+    try:
+        # Determine content type if not provided
+        if not content_type:
+            content_type = get_content_type_for_file(local_file_path)
+        
+        # Prepare upload arguments
+        extra_args = {
+            'ContentType': content_type,
+            'Metadata': {
+                'upload_type': 'hls_stream' if key.endswith(('.m3u8', '.ts')) else 'encoded_audio'
+            }
+        }
+        
+        # Set appropriate caching headers
+        if key.endswith('.m3u8'):
+            # Short cache for playlists (they can change)
+            extra_args['CacheControl'] = 'public, max-age=30'
+        elif key.endswith('.ts'):
+            # Longer cache for segments (immutable)
+            extra_args['CacheControl'] = 'public, max-age=86400'  # 1 day
+        else:
+            # Standard cache for other audio files
+            extra_args['CacheControl'] = 'public, max-age=31536000'  # 1 year
+        
+        # Upload file
+        s3_client.upload_file(local_file_path, bucket, key, ExtraArgs=extra_args)
+        
+        # Generate public URL
+        file_url = f"{settings.r2_endpoint}/{bucket}/{key}"
+        logger.debug(f"Uploaded file to R2: {key}")
+        return file_url
+        
+    except Exception as e:
+        logger.error(f"Failed to upload file to R2: {e}")
+        return None
+
+
+def get_content_type_for_hls_file(filename: str) -> str:
+    """Get appropriate content type for HLS files."""
+    if filename.endswith('.m3u8'):
+        return 'application/vnd.apple.mpegurl'
+    elif filename.endswith('.ts'):
+        return 'video/mp2t'
+    elif filename.endswith('.mp3'):
+        return 'audio/mpeg'
+    elif filename.endswith('.aac'):
+        return 'audio/aac'
+    else:
+        return 'application/octet-stream'
+
+
+def get_content_type_for_file(file_path: str) -> str:
+    """Get content type based on file extension."""
+    ext = os.path.splitext(file_path)[1].lower()
+    content_types = {
+        '.mp3': 'audio/mpeg',
+        '.wav': 'audio/wav',
+        '.flac': 'audio/flac',
+        '.m4a': 'audio/mp4',
+        '.aac': 'audio/aac',
+        '.ogg': 'audio/ogg',
+        '.m3u8': 'application/vnd.apple.mpegurl',
+        '.ts': 'video/mp2t',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.png': 'image/png',
+        '.webp': 'image/webp'
+    }
+    return content_types.get(ext, 'application/octet-stream')
+
+
+def upload_multiple_files(files_dict: Dict[str, str], bucket_key_prefix: str, is_audio: bool = True) -> Dict[str, str]:
+    """
+    Upload multiple files and return mapping of format names to URLs.
+    
+    Args:
+        files_dict: Dictionary mapping format names to local file paths
+        bucket_key_prefix: Prefix for R2 object keys
+        is_audio: Whether this is for audio bucket
+    
+    Returns:
+        Dictionary mapping format names to R2 URLs
+    """
+    uploaded_urls = {}
+    bucket = settings.r2_audio_bucket if is_audio else settings.r2_image_bucket
+    
+    for format_name, local_path in files_dict.items():
+        if not os.path.exists(local_path):
+            logger.warning(f"File does not exist: {local_path}")
+            continue
+        
+        # Generate R2 key
+        file_ext = os.path.splitext(local_path)[1]
+        r2_key = f"{bucket_key_prefix}{format_name}{file_ext}"
+        
+        # Upload file
+        file_url = upload_file_to_r2(local_path, bucket, r2_key)
+        if file_url:
+            uploaded_urls[format_name] = file_url
+        else:
+            logger.error(f"Failed to upload {format_name} file")
+    
+    return uploaded_urls
+
+
+# Initialize bucket verification on import
 
 
 # Initialize bucket verification on import

@@ -3,7 +3,7 @@ Database models for the music app.
 These correspond to the Supabase tables.
 """
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 
 class User:
@@ -48,6 +48,12 @@ class AudioFile:
         user_id: Optional[str] = None,
         file_url: str = "",
         image_url: Optional[str] = None,
+        
+        # Multi-format support
+        file_urls: Optional[Dict[str, str]] = None,
+        hls_url: Optional[str] = None,
+        formats_available: Optional[List[str]] = None,
+        
         # Musical analysis features
         bpm: Optional[float] = None,
         key: Optional[str] = None,
@@ -72,6 +78,12 @@ class AudioFile:
         self.user_id = user_id
         self.file_url = file_url
         self.image_url = image_url
+        
+        # Multi-format support
+        self.file_urls = file_urls or {}
+        self.hls_url = hls_url
+        self.formats_available = formats_available or []
+        
         self.bpm = bpm
         self.key = key
         self.scale = scale

@@ -1,6 +1,7 @@
 version: "3.9"
 
 services:
+  # Backend API server
   backend:
     build:
       context: .
@@ -10,7 +11,22 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - .:/app  # Mount local code into container
+      - .:/app
     env_file:
       - .env
+    restart: always
+
+  # RQ worker for background jobs
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: music-worker
+    command: python worker.py
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    depends_on:
+      - backend
     restart: always
