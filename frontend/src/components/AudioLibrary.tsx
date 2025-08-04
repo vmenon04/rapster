@@ -1,17 +1,12 @@
 // AudioLibrary.tsx
-import { useEffect, useState, useRef } from "react";
-import { fetchAudioFiles } from "@/lib/api";
+import { useEffect, useState, useRef, useCallback } from "react";
+import { Play, Pause, Music, Loader2, AlertCircle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Play, Pause, Music } from "lucide-react";
 import { AnalyticsModal } from "@/components/AnalyticsModal";
-
-interface AudioFile {
-  id: number;
-  title: string;
-  artist: string;
-  file_url: string;
-  image_url?: string;
-}
+import { apiClient, AudioFile } from "@/lib/api";
+import { handleError, showErrorToast } from "@/lib/errors";
+import { useAsync } from "@/hooks/useAsync";
+import { config } from "@/lib/config";
 
 export default function AudioLibrary() {
   const [audioFiles, setAudioFiles] = useState<AudioFile[]>([]);
@@ -26,29 +21,47 @@ export default function AudioLibrary() {
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
 
-  useEffect(() => {
-    async function getAudioFiles() {
-      try {
-        const files: AudioFile[] = await fetchAudioFiles();
-        setAudioFiles(files);
-      } catch (error) {
-        console.error("Failed to fetch audio files", error);
-      }
+  // Use async hook for data fetching
+  const { data: files, isLoading, error, execute: fetchFiles } = useAsync<AudioFile[]>();
+
+  const loadAudioFiles = useCallback(async () => {
+    try {
+      await fetchFiles(() => apiClient.getAudioFiles());
+    } catch (error) {
+      const appError = handleError(error, 'audio library');
+      showErrorToast(appError, 'Failed to load audio files');
     }
-    getAudioFiles();
-  }, []);
+  }, [fetchFiles]);
+
+  useEffect(() => {
+    loadAudioFiles();
+  }, [loadAudioFiles]);
+
+  useEffect(() => {
+    if (files) {
+      setAudioFiles(files);
+    }
+  }, [files]);
 
   const setupAudio = (audio: HTMLAudioElement) => {
-    audio.addEventListener("loadedmetadata", () => {
-      setDuration(audio.duration);
-    });
-    audio.addEventListener("timeupdate", () => {
-      setCurrentTime(audio.currentTime);
-    });
+    // Remove existing event listeners to prevent duplicates
+    audio.removeEventListener("loadedmetadata", handleLoadedMetadata);
+    audio.removeEventListener("timeupdate", handleTimeUpdate);
+    audio.removeEventListener("ended", handleAudioEnded);
+
+    // Add event listeners
+    audio.addEventListener("loadedmetadata", handleLoadedMetadata);
+    audio.addEventListener("timeupdate", handleTimeUpdate);
+    audio.addEventListener("ended", handleAudioEnded);
+
+    // Set up audio context and analyser
     if (!audioContextRef.current) {
-      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-      audioContextRef.current = new AudioContextClass();
+      const AudioContextClass = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (AudioContextClass) {
+        audioContextRef.current = new AudioContextClass();
+      }
     }
+
     if (audioContextRef.current) {
       try {
         const source = audioContextRef.current.createMediaElementSource(audio);
@@ -63,68 +76,188 @@ export default function AudioLibrary() {
     }
   };
 
-  const handlePlayPause = (file: AudioFile, index: number) => {
-    if (currentAudioIndex === index) {
-      if (audioRef.current) {
+  const handleLoadedMetadata = () => {
+    if (audioRef.current) {
+      setDuration(audioRef.current.duration);
+    }
+  };
+
+  const handleTimeUpdate = () => {
+    if (audioRef.current) {
+      setCurrentTime(audioRef.current.currentTime);
+    }
+  };
+
+  const handleAudioEnded = () => {
+    setIsPlaying(false);
+    setCurrentTime(0);
+  };
+
+  const handlePlayPause = async (file: AudioFile, index: number) => {
+    try {
+      if (currentAudioIndex === index && audioRef.current) {
+        // Same file - toggle play/pause
         if (audioRef.current.paused) {
           if (audioContextRef.current && audioContextRef.current.state === "suspended") {
-            audioContextRef.current.resume();
+            await audioContextRef.current.resume();
           }
-          audioRef.current
-            .play()
-            .then(() => setIsPlaying(true))
-            .catch((err) => console.error("Play error:", err));
+          await audioRef.current.play();
+          setIsPlaying(true);
         } else {
           audioRef.current.pause();
           setIsPlaying(false);
         }
+      } else {
+        // Different file - stop current and play new
+        if (audioRef.current) {
+          audioRef.current.pause();
+          audioRef.current.currentTime = 0;
+        }
+
+        // Create new audio element
+        const newAudio = new Audio(file.file_url);
+        newAudio.crossOrigin = "anonymous";
+        newAudio.volume = config.player.defaultVolume;
+        
+        audioRef.current = newAudio;
+        setupAudio(newAudio);
+
+        // Resume audio context if suspended
+        if (audioContextRef.current && audioContextRef.current.state === "suspended") {
+          await audioContextRef.current.resume();
+        }
+
+        try {
+          await newAudio.play();
+          setIsPlaying(true);
+          setCurrentAudioIndex(index);
+        } catch (playError) {
+          console.error("Error playing audio:", playError);
+          showErrorToast({ message: "Failed to play audio file" }, "Playback error");
+          setIsPlaying(false);
+        }
       }
-    } else {
-      if (audioRef.current) {
-        audioRef.current.pause();
-      }
-      const newAudio = new Audio(file.file_url);
-      newAudio.crossOrigin = "anonymous";
-      audioRef.current = newAudio;
-      setupAudio(newAudio);
-      if (audioContextRef.current && audioContextRef.current.state === "suspended") {
-        audioContextRef.current.resume();
-      }
-      newAudio
-        .play()
-        .then(() => setIsPlaying(true))
-        .catch((err) => console.error("Error playing audio:", err));
-      setCurrentAudioIndex(index);
+    } catch (error) {
+      console.error("Error in handlePlayPause:", error);
+      const appError = handleError(error, 'audio playback');
+      showErrorToast(appError, 'Failed to play audio');
+      setIsPlaying(false);
     }
   };
 
-  const togglePlayPause = () => {
+  const togglePlayPause = async () => {
     if (audioRef.current) {
-      if (audioRef.current.paused) {
-        if (audioContextRef.current && audioContextRef.current.state === "suspended") {
-          audioContextRef.current.resume();
+      try {
+        if (audioRef.current.paused) {
+          if (audioContextRef.current && audioContextRef.current.state === "suspended") {
+            await audioContextRef.current.resume();
+          }
+          await audioRef.current.play();
+          setIsPlaying(true);
+        } else {
+          audioRef.current.pause();
+          setIsPlaying(false);
         }
-        audioRef.current
-          .play()
-          .then(() => setIsPlaying(true))
-          .catch((err) => console.error("Play error:", err));
-      } else {
-        audioRef.current.pause();
-        setIsPlaying(false);
+      } catch (error) {
+        console.error("Error toggling playback:", error);
+        showErrorToast({ message: "Playback control failed" }, "Audio error");
       }
     }
   };
+
+  const formatTime = (time: number): string => {
+    if (isNaN(time)) return "0:00";
+    const minutes = Math.floor(time / 60);
+    const seconds = Math.floor(time % 60);
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  };
+
+  const formatDuration = (seconds?: number): string => {
+    if (!seconds) return "";
+    return formatTime(seconds);
+  };
+
+  const getFileDisplayInfo = (file: AudioFile) => {
+    const features = [];
+    if (file.bpm) features.push(`${Math.round(file.bpm)} BPM`);
+    if (file.key && file.scale) features.push(`${file.key} ${file.scale}`);
+    if (file.duration_sec) features.push(formatDuration(file.duration_sec));
+    
+    return features.join(" • ");
+  };
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="w-full max-w-4xl mx-auto p-4">
+        <div className="bg-white rounded-md shadow overflow-hidden">
+          <div className="px-4 py-4 border-b flex items-center justify-center">
+            <Loader2 className="w-6 h-6 animate-spin mr-2" />
+            <span>Loading your music library...</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <div className="w-full max-w-4xl mx-auto p-4">
+        <div className="bg-white rounded-md shadow overflow-hidden">
+          <div className="px-4 py-8 text-center">
+            <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Failed to load library</h3>
+            <p className="text-gray-600 mb-4">{error}</p>
+            <Button onClick={loadAudioFiles} variant="outline">
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Try Again
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Empty state
+  if (audioFiles.length === 0) {
+    return (
+      <div className="w-full max-w-4xl mx-auto p-4">
+        <div className="bg-white rounded-md shadow overflow-hidden">
+          <div className="px-4 py-4 border-b flex items-center justify-between">
+            <h1 className="text-lg font-semibold">Your Library</h1>
+            <Button onClick={loadAudioFiles} variant="outline" size="sm">
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Refresh
+            </Button>
+          </div>
+          <div className="px-4 py-8 text-center">
+            <Music className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">No music yet</h3>
+            <p className="text-gray-600">Upload your first track to get started!</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full max-w-4xl mx-auto p-4">
       <div className="bg-white rounded-md shadow overflow-hidden">
         <div className="px-4 py-4 border-b flex items-center justify-between">
-          <h1 className="text-lg font-semibold">Your Library</h1>
+          <h1 className="text-lg font-semibold">Your Library ({audioFiles.length} tracks)</h1>
+          <Button onClick={loadAudioFiles} variant="outline" size="sm">
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Refresh
+          </Button>
         </div>
+        
         {audioFiles.map((file, index) => (
           <div
             key={file.id}
-            className={`flex items-center p-4 border-b last:border-b-0 hover:bg-gray-50 transition cursor-pointer fade-in-up`}
+            className={`flex items-center p-4 border-b last:border-b-0 hover:bg-gray-50 transition cursor-pointer fade-in-up ${
+              currentAudioIndex === index ? 'bg-blue-50 border-blue-200' : ''
+            }`}
             style={{ animationDelay: `${index * 0.1}s` }}
             onClick={() => {
               setSelectedFile(file);
@@ -133,17 +266,38 @@ export default function AudioLibrary() {
               }
             }}
           >
-            <div className="w-10 h-10 flex-shrink-0 rounded-md overflow-hidden bg-gray-200 flex items-center justify-center mr-3">
+            {/* Album Art */}
+            <div className="w-12 h-12 flex-shrink-0 rounded-md overflow-hidden bg-gray-200 flex items-center justify-center mr-4">
               {file.image_url ? (
-                <img src={file.image_url} alt={file.title} className="w-full h-full object-cover" />
-              ) : (
-                <Music className="w-5 h-5 text-gray-500" />
+                <img 
+                  src={file.image_url} 
+                  alt={file.title} 
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    target.style.display = 'none';
+                    target.nextElementSibling?.classList.remove('hidden');
+                  }}
+                />
+              ) : null}
+              <Music className={`w-6 h-6 text-gray-500 ${file.image_url ? 'hidden' : ''}`} />
+            </div>
+
+            {/* Track Info */}
+            <div className="flex-1 min-w-0">
+              <div className="font-medium text-sm text-gray-900 truncate">{file.title}</div>
+              <div className="text-xs text-gray-500 truncate">{file.artist || "Unknown Artist"}</div>
+              {file.uploader_username && (
+                <div className="text-xs text-blue-600 truncate">
+                  Uploaded by @{file.uploader_username}
+                </div>
+              )}
+              {getFileDisplayInfo(file) && (
+                <div className="text-xs text-gray-400 mt-1">{getFileDisplayInfo(file)}</div>
               )}
             </div>
-            <div className="flex-1">
-              <div className="font-medium text-sm text-gray-900 truncate">{file.title}</div>
-              <div className="text-xs text-gray-500">{file.artist || "Unknown Artist"}</div>
-            </div>
+
+            {/* Play/Pause Button */}
             <Button
               variant="ghost"
               size="icon"
@@ -151,6 +305,7 @@ export default function AudioLibrary() {
                 e.stopPropagation();
                 handlePlayPause(file, index);
               }}
+              className={`ml-2 ${currentAudioIndex === index && isPlaying ? 'text-blue-600' : ''}`}
             >
               {currentAudioIndex === index && isPlaying ? (
                 <Pause className="w-4 h-4" />
@@ -162,6 +317,7 @@ export default function AudioLibrary() {
         ))}
       </div>
 
+      {/* Analytics Modal */}
       {selectedFile && (
         <AnalyticsModal
           file={selectedFile}

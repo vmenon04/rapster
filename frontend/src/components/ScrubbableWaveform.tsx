@@ -43,8 +43,8 @@ export function ScrubbableWaveform({
         const samplesPerBin = Math.floor(channelData.length / binCount);
         const localPeaks: number[] = [];
         for (let i = 0; i < binCount; i++) {
-          let start = i * samplesPerBin;
-          let end = start + samplesPerBin;
+          const start = i * samplesPerBin;
+          const end = start + samplesPerBin;
           let max = 0;
           for (let j = start; j < end && j < channelData.length; j++) {
             const val = Math.abs(channelData[j]);

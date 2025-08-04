@@ -1,5 +1,5 @@
 # Use a stable Python base
-FROM python:3.9-slim-buster
+FROM python:3.10-slim-bullseye
 
 # Avoid Python .pyc files & force stdout logging
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -41,12 +41,15 @@ ENV LD_LIBRARY_PATH=/usr/local/lib
 # Set working directory
 WORKDIR /app
 
-# Copy all your project files into the image
-COPY . /app
+# Copy requirements first for better caching
+COPY requirements.txt /app/
 
-# Install project Python dependencies
+# Install project Python dependencies first
 RUN pip install --no-cache-dir --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy all your project files into the image
+COPY . /app
 
 # Expose FastAPI port
 EXPOSE 8000

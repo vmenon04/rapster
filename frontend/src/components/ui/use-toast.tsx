@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, ReactNode } from "react";
+import { createContext, useContext, ReactNode } from "react";
 import { toast as sonnerToast } from "sonner"; // Using Sonner for toasts
 
 type ToastContextType = {
@@ -13,8 +13,6 @@ type ToastContextType = {
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
 
 export const ToastProvider = ({ children }: { children: ReactNode }) => {
-  const [toasts, setToasts] = useState([]);
-
   return (
     <ToastContext.Provider
       value={{
